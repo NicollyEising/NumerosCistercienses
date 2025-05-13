@@ -18,179 +18,182 @@ def is_segment_present(binary, x1, y1, x2, y2, unit, roi=None):
 
     overlap = cv2.bitwise_and(binary, line_mask)
 
-    # Cálculo de pixels de sobreposição
-    overlap_pixels = np.count_nonzero(overlap)
+    overlap_pixels   = np.count_nonzero(overlap)
+    expected_pixels  = np.count_nonzero(line_mask)
+    coverage_ratio   = overlap_pixels / expected_pixels if expected_pixels > 0 else 0
 
-    # Cálculo de cobertura
-    expected_pixels = np.count_nonzero(line_mask)
-    coverage_ratio = overlap_pixels / expected_pixels if expected_pixels > 0 else 0
-
-    # Calculando o comprimento do segmento detectado
     ys, xs = np.where(overlap > 0)
-    if xs.size > 0 and ys.size > 0:
-        detected_length = np.hypot(xs.max() - xs.min(), ys.max() - ys.min())
-    else:
-        detected_length = 0
-
-    # Comprimento esperado do segmento
+    detected_length = np.hypot(xs.max() - xs.min(), ys.max() - ys.min()) if xs.size else 0
     expected_length = np.hypot(x2 - x1, y2 - y1)
 
-    # Debug para verificar cobertura e comprimento detectados
-    print(f"Segmento: ({x1}, {y1}) -> ({x2}, {y2})")
-    print(f"  Cobertura: {coverage_ratio:.2f}, Comprimento detectado: {detected_length:.2f}, Comprimento esperado: {expected_length:.2f}")
-
-    # Ajustes de critérios
-    coverage_threshold = 0.25
-    length_threshold = 0.4
-
-    # Retorna True se a cobertura e o comprimento atenderem aos critérios ajustados
-    return coverage_ratio > coverage_threshold and detected_length >= length_threshold * expected_length
+    coverage_th = 0.35
+    length_th   = 0.40
+    return coverage_ratio > coverage_th and detected_length >= length_th * expected_length
 
 
-def cistercian_to_arabic(image: np.ndarray) -> str:
+def detect_central_line(binary_img, debug=False):
     """
-    Converte uma imagem de número cisterciense em número arábico (string).
+    Tenta localizar a linha vertical central.
+    1º  – HoughLinesP (mais robusto a quebras);
+    2º  – contornos como fallback.
+    Retorna (x1,y1,x2,y2) ou None.
     """
-    print("\n--- Iniciando decodificação ---")
+    h_img, w_img = binary_img.shape
 
+    # ---------- Hough ----------
+    lines = cv2.HoughLinesP(binary_img, 1, np.pi/180,
+                            threshold=120,
+                            minLineLength=int(h_img * 0.6),
+                            maxLineGap=20)
+    best = None
+    if lines is not None:
+        best_score = 1e9
+        for l in lines:
+            x1,y1,x2,y2 = l[0]
+            slope = abs((x2 - x1) / (y2 - y1 + 1e-6))
+            if slope > 0.20:        # não muito vertical
+                continue
+            cx_line = (x1 + x2) / 2
+            score   = abs(cx_line - w_img / 2)  # perto do meio = score baixo
+            if score < best_score:
+                best_score = score
+                best       = (x1, y1, x2, y2)
+
+    if best is not None:
+        if debug:
+            print("Linha central por Hough.")
+        return best
+
+    # ---------- Fallback: contornos ----------
+    contours, _ = cv2.findContours(binary_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    best_score = -1e9
+    for cnt in contours:
+        x,y,w,h = cv2.boundingRect(cnt)
+        aspect  = w / h
+        if aspect > 0.35:
+            continue
+        cx_cnt  = x + w/2
+        score   = h - 2*abs(cx_cnt - w_img/2)
+        if score > best_score:
+            best_score = score
+            best       = (x, y, x+w, y+h)
+
+    if best and debug:
+        print("Linha central por contorno.")
+    return best
+
+
+def cistercian_to_arabic(image: np.ndarray, debug: bool = False) -> int:
+    """
+    Converte uma imagem de número cisterciense para inteiro arábico.
+    """
     if len(image.shape) == 3:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
-        gray = image
-    print("Imagem convertida para escala de cinza.")
+        gray = image.copy()
 
-    # Pré-processamento
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    print("Pré-processamento: limiarização e desfoque aplicados.")
+    # --- pré-processamento básico ---
+    blurred = cv2.GaussianBlur(gray, (5,5), 0)
+    _, binary = cv2.threshold(blurred, 0, 255,
+                              cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-    kernel = np.ones((3, 3), np.uint8)
-    binary = cv2.dilate(binary, kernel, iterations=1)
-    print("Dilatação aplicada para unir traços.")
+    # dilatação leve para unir falhas
+    binary = cv2.dilate(binary, np.ones((3,3), np.uint8), 1)
 
-    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    print(f"Número de contornos encontrados: {len(contours)}")
+    # fechamento morfológico “alto” para reconstruir a linha vertical
+    v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT,
+                                         (1, int(gray.shape[0]*0.15)))
+    binary_closed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, v_kernel)
 
-    central_line = None
-    max_height = 0
-    for cnt in contours:
-        x, y, w, h = cv2.boundingRect(cnt)
-        aspect_ratio = float(w) / h
-        print(f"Contorno: x={x}, y={y}, w={w}, h={h}, aspect_ratio={aspect_ratio:.2f}")
-        if h > max_height and aspect_ratio < 0.3:
-            central_line = (x, y, w, h)
-            max_height = h
-            print(f"Linha central candidata: x={x}, y={y}, w={w}, h={h}")
+    # --- localizar linha central ---
+    central = detect_central_line(binary_closed, debug)
+    if central is None:
+        if debug:
+            print("Nenhuma linha central detectada – retornando 0.")
+        return 0
 
-    if not central_line:
-        print("AVISO: Nenhuma linha central detectada. Retornando '0'.")
-        return "0"
+    x1,y1,x2,y2 = central
+    cx = image.shape[1] // 2
+    cy = int((y1 + y2) / 2)
+    height = abs(y2 - y1)
+    unit   = height / 8.0
+    dbg = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    cv2.line(dbg, (cx, 0), (cx, image.shape[0]), (0, 0, 255), 3)  # Vermelho
+    cv2.imshow("Linha central fixa", dbg)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
-    cx = central_line[0] + central_line[2] // 2
-    cy = central_line[1] + central_line[3] // 2
-    height = central_line[3]
-    unit = height / 8
-    print(f"Linha central detectada: cx={cx}, cy={cy}, height={height}, unit={unit:.2f}")
+    if debug:
+        dbg = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        cv2.line(dbg, (x1,y1), (x2,y2), (0,0,255), 3)
+        cv2.imshow("Linha central", dbg)
+        cv2.waitKey(0); cv2.destroyAllWindows()
 
-    digits = {1: 0, 2: 0, 3: 0, 4: 0}
-
-    # Padrões de traços para cada dígito
+    # ------------------------------------------------------------------
+    #  padrões dos segmentos / decodificação (igual ao que você já tinha)
+    # ------------------------------------------------------------------
     patterns = { 
         0: [],
-        1: [((0, -3.8), (1, -3.8))],                   # traço horizontal inferior – dígito “1”
-        2: [((0, -2.5), (1, -2.5))],                   # traço horizontal superior – dígito “2”
-        3: [((0, -3.8), (1, -2.5))],                   # diagonal “\” – dígito “3”
-        4: [((0, -2.5), (1, -3.8))],                   # diagonal “/” – dígito “4”
-        5: [((0, -2.5), (1, -3.8)), ((0, -3.8), (1, -3.8))],  # “4” + traço horizontal inferior – dígito “5”
-        6: [((1, -3.8), (1, -2.5))],                   # traço vertical – dígito “6”
-        7: [((0, -3.8), (1, -3.8)),                    # traço horizontal inferior +
-            ((1, -3.8), (1, -2.5))],                   # traço vertical – dígito “7”
-        8: [((0, -2.5), (1, -2.5)), ((1, -3.8), (1, -2.5))],  # traço vertical – dígito “8”
-        9: [((0, -2.5), (1, -2.5)),                    # traço horizontal superior +
-            ((1, -3.8), (1, -2.5)),                    # traço vertical +
-            ((0, -3.8), (1, -3.8))],                   # traço horizontal inferior – dígito “9”
+        1: [((0, -3.8), (1, -3.8))],
+        2: [((0, -2.5), (1, -2.5))],
+        3: [((0, -3.8), (1, -2.5))],
+        4: [((0, -2.5), (1, -3.8))],
+        5: [((0, -2.5), (1, -3.8)), ((0, -3.8), (1, -3.8))],
+        6: [((1, -3.8), (1, -2.5))],
+        7: [((0, -3.8), (1, -3.8)), ((1, -3.8), (1, -2.5))],
+        8: [((0, -2.5), (1, -2.5)), ((1, -3.8), (1, -2.5))],
+        9: [((0, -2.5), (1, -2.5)), ((1, -3.8), (1, -2.5)),
+            ((0, -3.8), (1, -3.8))]
     }
 
-    base_x = cx
-    base_y = cy
+    sorted_patterns = sorted(patterns.items(), key=lambda x: -len(x[1]))
+    digits = {1:0,2:0,3:0,4:0}
 
-    # ---------------------------------------------
-# dentro de cistercian_to_arabic()
-# ---------------------------------------------
+    quad_size = int(4 * unit)
+    quadrant_names = {1:"unidade",2:"centena",3:"milhar",4:"dezena"}
 
-    sorted_patterns = sorted(patterns.items(),
-                            key=lambda x: -len(x[1]))
-    digits = {1: 0, 2: 0, 3: 0, 4: 0}
+    for quadrant in (3,2,4,1):
+        mx = 1 if quadrant in (1,4) else -1
+        my = 1 if quadrant in (1,2) else -1
 
-    quad_size = int(4 * unit)          # largura/altura de cada quadrante
+        # ROI do quadrante
+        if quadrant in (1,2):  y_min,y_max = cy - quad_size, cy
+        else:                  y_min,y_max = cy,            cy + quad_size
+        if quadrant in (1,4):  x_min,x_max = cx,            cx + quad_size
+        else:                  x_min,x_max = cx - quad_size, cx
 
-    quadrant_names = {
-    1: "unidade",
-    2: "centena",
-    3: "milhar",
-    4: "dezena"
-}
-
-    for quadrant in (3, 2, 4, 1):
-        # orientação horizontal: direita (1,4) = +1 ; esquerda (2,3) = –1
-        mx = 1 if quadrant in (1, 4) else -1
-        # orientação vertical   : topo    (1,2) = +1 ; base     (3,4) = –1
-        my = 1 if quadrant in (1, 2) else -1
-        print(f'\nVerificando quadrante {quadrant} ({quadrant_names[quadrant]}) (mx={mx}, my={my})')
-
-        # ROI que circunscreve o quadrante
-        if quadrant in (1, 2):   # quadrantes superiores
-            y_min, y_max = cy - quad_size, cy
-        else:                    # quadrantes inferiores
-            y_min, y_max = cy,            cy + quad_size
-        if quadrant in (1, 4):   # quadrantes da direita
-            x_min, x_max = cx,            cx + quad_size
-        else:                    # quadrantes da esquerda
-            x_min, x_max = cx - quad_size, cx
-
-        # garante que não ultrapasse a imagem
-        x_min = max(0, x_min);   x_max = min(binary.shape[1]-1, x_max)
-        y_min = max(0, y_min);   y_max = min(binary.shape[0]-1, y_max)
+        x_min = max(0, x_min); x_max = min(binary.shape[1]-1, x_max)
+        y_min = max(0, y_min); y_max = min(binary.shape[0]-1, y_max)
         roi = (int(x_min), int(y_min), int(x_max), int(y_max))
 
         best_digit, best_score = 0, -1.0
-
         for digit, segs in sorted_patterns:
-            if len(segs) == 0:
+            if not segs:
                 continue
             found = 0
-            for (dx1, dy1), (dx2, dy2) in segs:
-                x1 = int(cx + mx * dx1 * unit)
-                y1 = int(cy + my * dy1 * unit)
-                x2 = int(cx + mx * dx2 * unit)
-                y2 = int(cy + my * dy2 * unit)
-                if is_segment_present(binary, x1, y1, x2, y2, unit, roi):
+            for (dx1,dy1),(dx2,dy2) in segs:
+                x_s = int(cx + mx*dx1*unit)
+                y_s = int(cy + my*dy1*unit)
+                x_e = int(cx + mx*dx2*unit)
+                y_e = int(cy + my*dy2*unit)
+                if is_segment_present(binary_closed, x_s,y_s,x_e,y_e, unit, roi):
                     found += 1
-
             score = found / len(segs)
             if score > best_score:
-                best_score, best_digit = score, digit
-            if best_score == 1.0:          # todos os traços presentes → dígito garantido
+                best_score,best_digit = score,digit
+            if best_score == 1.0:
                 break
 
-        if best_score == 1.0:
-            digits[quadrant] = best_digit
-        else:
-            digits[quadrant] = 0
+        digits[quadrant] = best_digit if best_score == 1.0 else 0
 
-            
-            
-    debug_image = cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
-    cv2.line(debug_image, (x1, y1), (x2, y2), (0, 255, 0), 1)
-    cv2.imshow("Segmento Verificado", debug_image)
-    cv2.waitKey(5000)  # Mostra por 100ms
-    
+    arabic_number = (digits[3]*1000 +
+                     digits[4]*100  +
+                     digits[2]*10   +
+                     digits[1])
 
-    
-    arabic_number = digits[3] * 1000 + digits[4] * 100 + digits[2] * 10 + digits[1]
-    print("\n--- Resultado Final ---")
-    print(f"Quadrantes: {digits}")
-    print(f"Número Arábico Decodificado: {arabic_number}")
+    if debug:
+        print("Quadrantes →", digits)
+        print("Número final =", arabic_number)
     return arabic_number
 
 def get_quadrant_roi(cx, cy, unit, quadrant, img_shape, margin=0.3):
@@ -239,28 +242,27 @@ def arabic_to_cistercian_image(number: str, img_height=400, img_width=200) -> np
     unit = img_height // 10
 
     # Padrões de traços para cada dígito (em coordenadas relativas)
-    patterns = {
-    1: [((0, -3.8), (1, -3.8))],                   # traço horizontal inferior – dígito “1”
-    2: [((0, -2),   (1, -2))],                     # traço horizontal superior – dígito “2”
-    3: [((0, -3.8), (1, -2.5))],                   # diagonal “\” – dígito “3”
-    4: [((0, -2.5), (1, -3.7))],                   # diagonal “/” – dígito “4”
-    5: [((0, -2.5), (1, -3.7)), ((0, -3.7), (1, -3.7))],  # “4” + traço horizontal inferior – dígito “5”
-    6: [((1, -3.8), (1, -2.5))],                   # traço vertical – dígito “6”
-    7: [((0, -3.8), (1, -3.8)),                     # traço horizontal inferior +
-        ((1, -3.8), (1, -2.5))],                   # traço vertical – dígito “7”
-    8: [((0, -2.5),   (1, -2.5)), ((1, -3.8), (1, -2.5))],                   # traço vertical – dígito “8”
-    9: [((0, -2.5),   (1, -2.5)),                       # traço horizontal superior +
-        ((1, -3.8), (1, -2.5)),                   # traço vertical +
-        ((0, -3.8), (1, -3.8))],     
+    patterns = { 
+        0: [],
+        1: [((0, -3.8), (1, -3.8))],
+        2: [((0, -2.5), (1, -2.5))],
+        3: [((0, -3.8), (1, -2.5))],
+        4: [((0, -2.5), (1, -3.8))],
+        5: [((0, -2.5), (1, -3.8)), ((0, -3.8), (1, -3.8))],
+        6: [((1, -3.8), (1, -2.5))],
+        7: [((0, -3.8), (1, -3.8)), ((1, -3.8), (1, -2.5))],
+        8: [((0, -2.5), (1, -2.5)), ((1, -3.8), (1, -2.5))],
+        9: [((0, -2.5), (1, -2.5)), ((1, -3.8), (1, -2.5)),
+            ((0, -3.8), (1, -3.8))]
     }
 
 
     # Quadrantes: 1: sup dir, 2: sup esq, 3: inf esq, 4: inf dir
     mirrors = {
-        1: (1, -1),
-        2: (-1, -1),
-        3: (-1, 1),
-        4: (1, 1),
+        1: (-1, -1),  # sup. direita → milhar
+        2: (1, -1), # sup. esquerda → centena
+        3: (-1, 1),  # inf. esquerda → dezena
+        4: (1, 1),   # inf. direita → unidade
     }
 
     def draw_segment(quadrant: int, digit: int):
@@ -273,7 +275,7 @@ def arabic_to_cistercian_image(number: str, img_height=400, img_width=200) -> np
             y1 = center_y + my * dy1 * unit
             x2 = center_x + mx * dx2 * unit
             y2 = center_y + my * dy2 * unit
-            cv2.line(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 0), 3)
+            cv2.line(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 0), 5)
 
     # Processar os 4 dígitos
     num_str = number.zfill(4)
@@ -283,6 +285,10 @@ def arabic_to_cistercian_image(number: str, img_height=400, img_width=200) -> np
     draw_segment(2, centenas)
     draw_segment(3, dezenas)
     draw_segment(4, unidades)
+    
+    nome_arquivo = f"cistercian_{num_str}.png"
+    cv2.imwrite(nome_arquivo, img)
+    print(f"Imagem salva como: {nome_arquivo}")
 
     return img
 
@@ -329,6 +335,7 @@ def gerar_imagem_numero_arabico(numero: int):
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
+    return imagem
 
 
 
@@ -351,16 +358,18 @@ def arabic_to_cistercian_quadrant_images(number: str,
         raise ValueError("Fora do intervalo 0–9999.")
     
     # Padrões e espelhamentos (mesmos da função original)
-    patterns = {
+    patterns = { 
+        0: [],
         1: [((0, -3.8), (1, -3.8))],
-        2: [((0, -2),   (1, -2))],
+        2: [((0, -2.5), (1, -2.5))],
         3: [((0, -3.8), (1, -2.5))],
-        4: [((0, -2.5), (1, -3.7))],
-        5: [((0, -2.5), (1, -3.7)), ((0, -3.7), (1, -3.7))],
+        4: [((0, -2.5), (1, -3.8))],
+        5: [((0, -2.5), (1, -3.8)), ((0, -3.8), (1, -3.8))],
         6: [((1, -3.8), (1, -2.5))],
         7: [((0, -3.8), (1, -3.8)), ((1, -3.8), (1, -2.5))],
         8: [((0, -2.5), (1, -2.5)), ((1, -3.8), (1, -2.5))],
-        9: [((0, -2.5), (1, -2.5)), ((1, -3.8), (1, -2.5)), ((0, -3.8), (1, -3.8))],
+        9: [((0, -2.5), (1, -2.5)), ((1, -3.8), (1, -2.5)),
+            ((0, -3.8), (1, -3.8))]
     }
     mirrors = {
         1: (-1, -1),  # sup. direita → milhar
