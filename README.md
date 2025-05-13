@@ -30,4 +30,8 @@ Este projeto implementa um sistema de conversão bidirecional entre números ar�
    ```python
    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
    ```
-4. Ao rodar o codigo python siga a interface gráfica para seleção de arquivos
+
+4. Rodar uvicorn: 
+   ```uvicorn api:app --reload
+   ```
+5. Ao rodar o codigo python siga a interface gráfica para seleção de arquivos
