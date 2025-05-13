@@ -119,14 +119,12 @@ def cistercian_to_arabic(image: np.ndarray, debug: bool = False) -> int:
     unit   = height / 8.0
     dbg = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
     cv2.line(dbg, (cx, 0), (cx, image.shape[0]), (0, 0, 255), 3)  # Vermelho
-    cv2.imshow("Linha central fixa", dbg)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
     if debug:
         dbg = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
         cv2.line(dbg, (x1,y1), (x2,y2), (0,0,255), 3)
-        cv2.imshow("Linha central", dbg)
         cv2.waitKey(0); cv2.destroyAllWindows()
 
     # ------------------------------------------------------------------
@@ -331,7 +329,6 @@ def gerar_imagem_numero_arabico(numero: int):
     cv2.putText(imagem, texto, (pos_x, pos_y), fonte, escala, cor, espessura, cv2.LINE_AA)
 
     # Exibe a imagem
-    cv2.imshow("Número Arábico", imagem)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
@@ -453,7 +450,6 @@ def main():
 
         print("\nGerando imagem cisterciense correspondente...")
         cistercian_img = arabic_to_cistercian_image(num)
-        cv2.imshow("Número Cisterciense", cistercian_img)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
@@ -484,7 +480,6 @@ def main():
         filename = f"{nome}_{num}.png"
         cv2.imwrite(filename, img)
         print(f"Salvo: {filename}")
-        cv2.imshow(nome, img)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 

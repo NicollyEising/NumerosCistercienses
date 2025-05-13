@@ -32,6 +32,7 @@ Este projeto implementa um sistema de conversão bidirecional entre números ar�
    ```
 
 4. Rodar uvicorn: 
-   ```uvicorn api:app --reload
+   ```
+   uvicorn api:app --reload
    ```
 5. Ao rodar o codigo python siga a interface gráfica para seleção de arquivos

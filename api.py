@@ -9,9 +9,17 @@ import io
 import shutil
 import os
 from main import cistercian_to_arabic, arabic_to_cistercian_image, extract_number_from_image, arabic_to_cistercian_quadrant_images, gerar_imagem_numero_arabico
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Ou especifique domínios específicos
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class ArabicNumberRequest(BaseModel):
     number: str
