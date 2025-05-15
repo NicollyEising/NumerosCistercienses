@@ -1,0 +1,9 @@
+opencv-python>=4.5.0
+numpy>=1.19.0
+pytesseract>=0.3.8
+tk
+numpy
+pytesseract
+fastapi
+uvicorn[standard]
+python-multipart
