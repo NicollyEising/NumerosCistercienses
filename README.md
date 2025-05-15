@@ -21,6 +21,8 @@ Nicolly Munhoz Eising e Nahuel Isaias Ayala Molinas
 - NumPy  
 - pytesseract  
 - Tesseract OCR
+- React
+- Semantic-ui
 
 ## Instalação
 
@@ -65,7 +67,7 @@ pip install -r requirements.txt
    npm start
    ```
 
-### 8 Caso de erro de script:
+### 8. Caso de erro de script:
    ```
    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
    ```
