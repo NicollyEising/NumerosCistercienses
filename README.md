@@ -60,14 +60,13 @@ pip install -r requirements.txt
    cd my-app
    ```
 
-
 ### 7. Rodar npm:
    ```
    npm start
    ```
 
-6. 1. Caso de erro de script:
+### 8 Caso de erro de script:
    ```
    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
    ```
-7. Ao rodar o codigo python siga a interface gráfica para seleção de arquivos
+### 9. Ao rodar o codigo python siga a interface gráfica para seleção de arquivos
