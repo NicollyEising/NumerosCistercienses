@@ -64,6 +64,7 @@ pip install -r requirements.txt
 
 ### 7. Rodar npm:
    ```
+   npm install
    npm start
    ```
 
