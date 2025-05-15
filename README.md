@@ -72,4 +72,4 @@ pip install -r requirements.txt
    ```
    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
    ```
-### 9. Ao rodar o codigo python siga a interface gráfica para seleção de arquivos
+### 9. Ao rodar o codigo acesse o frontend através do navegador
