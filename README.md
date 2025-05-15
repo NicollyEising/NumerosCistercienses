@@ -1,6 +1,10 @@
+
 # Conversor de Números Cistercienses
 
 Este projeto implementa um sistema de conversão bidirecional entre números arábicos (1 a 9999) e números cistercienses, com suporte a entrada via imagem e geração gráfica.
+
+# Participantes
+Nicolly Munhoz Eising e Nahuel Isaias Ayala Molinas
 
 ## Funcionalidades
 
